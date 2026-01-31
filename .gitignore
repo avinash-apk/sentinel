@@ -1,0 +1,13 @@
+#Binaries
+sentinel
+sentinel.exe
+*.exe
+*.dll
+
+#Go build artifacts
+*.out
+*.test
+
+#OS specific
+.DS_Store
+Thumbs.db
