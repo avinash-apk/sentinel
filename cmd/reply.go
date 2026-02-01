@@ -24,12 +24,11 @@ var replyCmd = &cobra.Command{
 		switch platform {
 		case "gh":
 			token := os.Getenv("GITHUB_TOKEN")
-			// Hardcoded for hackathon speed
-			sender = postmaster.NewGitHubSender(token, "YOUR_USERNAME", "YOUR_REPO")
+			// Make sure these match your actual GitHub details
+			sender = postmaster.NewGitHubSender(token, "YOUR_USERNAME", "sentinel")
 
 		case "discord":
 			token := os.Getenv("DISCORD_TOKEN")
-			// Handle error immediately inside the case
 			ds, err := postmaster.NewDiscordSender(token)
 			if err != nil {
 				fmt.Printf("error creating discord client: %v\n", err)
@@ -37,8 +36,25 @@ var replyCmd = &cobra.Command{
 			}
 			sender = ds
 
+		case "slack":
+			token := os.Getenv("SLACK_TOKEN")
+			if token == "" {
+				fmt.Println("error: SLACK_TOKEN env var not set")
+				return
+			}
+			sender = postmaster.NewSlackSender(token)
+
+		case "email":
+			user := os.Getenv("EMAIL_USER")
+			pass := os.Getenv("EMAIL_PASS")
+			if user == "" || pass == "" {
+				fmt.Println("error: EMAIL_USER or EMAIL_PASS not set")
+				return
+			}
+			sender = postmaster.NewEmailSender(user, pass)
+
 		default:
-			fmt.Println("unknown platform. use 'gh' or 'discord'")
+			fmt.Println("unknown platform. use 'gh', 'discord', 'slack', or 'email'")
 			return
 		}
 
