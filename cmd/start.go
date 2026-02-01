@@ -6,9 +6,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	// REPLACE THESE with your actual module path
 	"github.com/avinash-apk/sentinel/pkg/bus"
 	"github.com/avinash-apk/sentinel/pkg/ingest"
-	"github.com/avinash-apk/sentinel/pkg/postmaster" // Import Postmaster
+	"github.com/avinash-apk/sentinel/pkg/postmaster"
 	"github.com/avinash-apk/sentinel/pkg/tui"
 )
 
@@ -16,39 +17,64 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Starts the Sentinel Command Center",
 	Run: func(cmd *cobra.Command, args []string) {
-		
-		token := os.Getenv("DISCORD_TOKEN")
-		if token == "" {
-			fmt.Println("Error: DISCORD_TOKEN is missing")
-			return
+
+		// --- LOAD SECRETS ---
+		discordToken := os.Getenv("DISCORD_TOKEN")
+		slackAppToken := os.Getenv("SLACK_APP_TOKEN") // xapp-...
+		slackBotToken := os.Getenv("SLACK_BOT_TOKEN") // xoxb-...
+
+		if discordToken == "" {
+			fmt.Println("Warning: DISCORD_TOKEN is missing (Discord features disabled)")
 		}
 
-		// 1. Setup Bus
+		// --- SETUP BUS ---
 		sentinelBus := bus.NewEventBus()
 		uiChan := make(chan bus.Event)
 		sentinelBus.Subscribe("discord:message", uiChan)
+		sentinelBus.Subscribe("slack:message", uiChan)
 
-		// 2. Setup Postmaster (Sender)
-		// We need this so the TUI can actually send messages
-		discordSender, err := postmaster.NewDiscordSender(token)
-		if err != nil {
-			panic(err)
+		// --- SETUP SERVICES ---
+		var discordSender *postmaster.DiscordSender
+		var slackSender *postmaster.SlackSender
+
+		// 1. Initialize Discord
+		if discordToken != "" {
+			// Sender
+			ds, err := postmaster.NewDiscordSender(discordToken)
+			if err != nil {
+				fmt.Printf("Error starting Discord Sender: %v\n", err)
+			} else {
+				discordSender = ds
+			}
+
+			// Listener
+			dl, err := ingest.NewDiscordIngestor(discordToken, sentinelBus)
+			if err != nil {
+				fmt.Printf("Error starting Discord Listener: %v\n", err)
+			} else {
+				// Start listener
+				if err := dl.Start(); err != nil {
+					fmt.Printf("Failed to connect to Discord Gateway: %v\n", err)
+				}
+			}
 		}
 
-		// 3. Setup Ingestor (Listener)
-		discordListener, err := ingest.NewDiscordIngestor(token, sentinelBus)
-		if err != nil {
-			panic(err)
-		}
-		// Start listener
-		err = discordListener.Start()
-		if err != nil {
-			panic(err)
+		// 2. Initialize Slack
+		if slackAppToken != "" && slackBotToken != "" {
+			// Sender
+			slackSender = postmaster.NewSlackSender(slackBotToken)
+
+			// Listener
+			// Start in a goroutine because SocketClient.Run() is blocking inside our Start() wrapper
+			sl := ingest.NewSlackIngestor(slackAppToken, slackBotToken, sentinelBus)
+			go sl.Start()
+		} else {
+			fmt.Println("Warning: SLACK_APP_TOKEN or SLACK_BOT_TOKEN missing (Slack features disabled)")
 		}
 
-		// 4. Start TUI
-		// We pass the sender into the TUI so it can "Reply Straight Up"
-		p := tea.NewProgram(tui.InitialModel(uiChan, discordSender))
+		// --- START TUI ---
+		// We pass both senders to the TUI. If they are nil, the TUI handles it safely.
+		p := tea.NewProgram(tui.InitialModel(uiChan, discordSender, slackSender))
 		if _, err := p.Run(); err != nil {
 			fmt.Println("Error starting TUI:", err)
 			os.Exit(1)

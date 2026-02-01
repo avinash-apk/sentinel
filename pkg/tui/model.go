@@ -7,8 +7,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	// REPLACE THESE with your actual module path
 	"github.com/avinash-apk/sentinel/pkg/bus"
-	"github.com/avinash-apk/sentinel/pkg/postmaster" // Import Postmaster
+	"github.com/avinash-apk/sentinel/pkg/postmaster"
 )
 
 // STYLES
@@ -36,15 +37,18 @@ type Notification struct {
 }
 
 type Model struct {
-	state        sessionState
+	state         sessionState
 	notifications []Notification
-	cursor       int              // Which item is selected
-	textInput    textinput.Model  // The reply box
-	sub          chan bus.Event
-	sender       *postmaster.DiscordSender // Hardcoded for demo simplicity
+	cursor        int             // Which item is selected
+	textInput     textinput.Model // The reply box
+	sub           chan bus.Event
+	
+	// Senders
+	discordSender *postmaster.DiscordSender
+	slackSender   *postmaster.SlackSender
 }
 
-func InitialModel(sub chan bus.Event, ds *postmaster.DiscordSender) Model {
+func InitialModel(sub chan bus.Event, ds *postmaster.DiscordSender, ss *postmaster.SlackSender) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Type your reply..."
 	ti.CharLimit = 156
@@ -55,7 +59,8 @@ func InitialModel(sub chan bus.Event, ds *postmaster.DiscordSender) Model {
 		notifications: []Notification{},
 		sub:           sub,
 		textInput:     ti,
-		sender:        ds,
+		discordSender: ds,
+		slackSender:   ss,
 	}
 }
 
@@ -67,7 +72,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
-	
+
 	// Handle Incoming Events
 	case bus.Event:
 		// Convert map payload to Notification struct
@@ -86,7 +91,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Keypresses
 	case tea.KeyMsg:
 		switch m.state {
-		
+
 		// VIEW MODE: Navigate the list
 		case viewMode:
 			switch msg.String() {
@@ -119,13 +124,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// EXECUTE THE REPLY
 				target := m.notifications[m.cursor]
 				replyText := m.textInput.Value()
-				
-				// Send via Postmaster
-				// In a full app, you'd switch on target.Platform
-				if target.Platform == "discord" && m.sender != nil {
-					m.sender.Send(target.ID, replyText)
+
+				// Send via Postmaster based on platform
+				if target.Platform == "discord" && m.discordSender != nil {
+					m.discordSender.Send(target.ID, replyText)
+				} else if target.Platform == "slack" && m.slackSender != nil {
+					m.slackSender.Send(target.ID, replyText)
 				}
-				
+
 				// Reset UI
 				m.state = viewMode
 				m.textInput.Reset()
