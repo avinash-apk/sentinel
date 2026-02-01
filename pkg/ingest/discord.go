@@ -25,13 +25,13 @@ func (d *DiscordIngestor) Start() error {
 	d.Session.AddHandler(d.messageCreate)
 
 	// Open a websocket connection to Discord and begin listening.
-	d.Session.Identify.Intents = discordgo.IntentsGuildMessages
+	d.Session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentMessageContent
 	err := d.Session.Open()
 	if err != nil {
 		return fmt.Errorf("error opening connection: %v", err)
 	}
 
-	fmt.Println("🎧 Discord Listener is Active")
+	fmt.Println("Discord Listener is Active")
 	return nil
 }
 

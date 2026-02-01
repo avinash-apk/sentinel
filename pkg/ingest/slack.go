@@ -73,7 +73,7 @@ func (s *SlackIngestor) getUserName(userID string) string {
 }
 
 func (s *SlackIngestor) Start() {
-	fmt.Println("🎧 Slack Listener is Active")
+	fmt.Println("Slack Listener is Active")
 
 	go func() {
 		for evt := range s.SocketClient.Events {

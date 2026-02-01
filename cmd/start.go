@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	// REPLACE THESE with your actual module path
 	"github.com/avinash-apk/sentinel/pkg/bus"
 	"github.com/avinash-apk/sentinel/pkg/ingest"
 	"github.com/avinash-apk/sentinel/pkg/postmaster"
@@ -20,8 +19,8 @@ var startCmd = &cobra.Command{
 
 		// --- LOAD SECRETS ---
 		discordToken := os.Getenv("DISCORD_TOKEN")
-		slackAppToken := os.Getenv("SLACK_APP_TOKEN") // xapp-...
-		slackBotToken := os.Getenv("SLACK_BOT_TOKEN") // xoxb-...
+		slackAppToken := os.Getenv("SLACK_APP_TOKEN")
+		slackBotToken := os.Getenv("SLACK_BOT_TOKEN")
 
 		if discordToken == "" {
 			fmt.Println("Warning: DISCORD_TOKEN is missing (Discord features disabled)")
@@ -52,7 +51,6 @@ var startCmd = &cobra.Command{
 			if err != nil {
 				fmt.Printf("Error starting Discord Listener: %v\n", err)
 			} else {
-				// Start listener
 				if err := dl.Start(); err != nil {
 					fmt.Printf("Failed to connect to Discord Gateway: %v\n", err)
 				}
@@ -65,7 +63,6 @@ var startCmd = &cobra.Command{
 			slackSender = postmaster.NewSlackSender(slackBotToken)
 
 			// Listener
-			// Start in a goroutine because SocketClient.Run() is blocking inside our Start() wrapper
 			sl := ingest.NewSlackIngestor(slackAppToken, slackBotToken, sentinelBus)
 			go sl.Start()
 		} else {
@@ -73,7 +70,6 @@ var startCmd = &cobra.Command{
 		}
 
 		// --- START TUI ---
-		// We pass both senders to the TUI. If they are nil, the TUI handles it safely.
 		p := tea.NewProgram(tui.InitialModel(uiChan, discordSender, slackSender))
 		if _, err := p.Run(); err != nil {
 			fmt.Println("Error starting TUI:", err)

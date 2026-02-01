@@ -5,13 +5,13 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	// MAKE SURE THIS PATH MATCHES YOUR GO.MOD
-	"github.com/avinash-apk/sentinel/pkg/postmaster" 
+	// Replace with your actual module path
+	"github.com/avinash-apk/sentinel/pkg/postmaster"
 )
 
 var replyCmd = &cobra.Command{
 	Use:   "reply [platform] [id] [message]",
-	Short: "Send a reply to GitHub, Slack, or Discord",
+	Short: "Send a reply to Slack, Discord, or Email",
 	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		platform := args[0]
@@ -19,14 +19,8 @@ var replyCmd = &cobra.Command{
 		message := args[2]
 
 		var sender postmaster.Messenger
-		// We remove 'var err error' from here to avoid the unused variable error
 
 		switch platform {
-		case "gh":
-			token := os.Getenv("GITHUB_TOKEN")
-			// Make sure these match your actual GitHub details
-			sender = postmaster.NewGitHubSender(token, "YOUR_USERNAME", "sentinel")
-
 		case "discord":
 			token := os.Getenv("DISCORD_TOKEN")
 			ds, err := postmaster.NewDiscordSender(token)
@@ -37,9 +31,10 @@ var replyCmd = &cobra.Command{
 			sender = ds
 
 		case "slack":
-			token := os.Getenv("SLACK_TOKEN")
+			// We use the Bot Token (xoxb) for sending messages
+			token := os.Getenv("SLACK_BOT_TOKEN")
 			if token == "" {
-				fmt.Println("error: SLACK_TOKEN env var not set")
+				fmt.Println("error: SLACK_BOT_TOKEN env var not set")
 				return
 			}
 			sender = postmaster.NewSlackSender(token)
@@ -54,7 +49,7 @@ var replyCmd = &cobra.Command{
 			sender = postmaster.NewEmailSender(user, pass)
 
 		default:
-			fmt.Println("unknown platform. use 'gh', 'discord', 'slack', or 'email'")
+			fmt.Println("unknown platform. use 'discord', 'slack', or 'email'")
 			return
 		}
 

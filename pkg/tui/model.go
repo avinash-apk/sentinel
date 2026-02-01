@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	// REPLACE THESE with your actual module path
 	"github.com/avinash-apk/sentinel/pkg/bus"
 	"github.com/avinash-apk/sentinel/pkg/postmaster"
 )
@@ -31,7 +30,7 @@ const (
 // DATA STRUCTURE FOR LIST ITEMS
 type Notification struct {
 	Platform string
-	ID       string // The Channel ID or Issue Num
+	ID       string
 	User     string
 	Message  string
 }
@@ -39,10 +38,10 @@ type Notification struct {
 type Model struct {
 	state         sessionState
 	notifications []Notification
-	cursor        int             // Which item is selected
-	textInput     textinput.Model // The reply box
+	cursor        int
+	textInput     textinput.Model
 	sub           chan bus.Event
-	
+
 	// Senders
 	discordSender *postmaster.DiscordSender
 	slackSender   *postmaster.SlackSender
@@ -75,7 +74,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle Incoming Events
 	case bus.Event:
-		// Convert map payload to Notification struct
 		if data, ok := msg.Payload.(map[string]string); ok {
 			notif := Notification{
 				Platform: data["platform"],
@@ -83,7 +81,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				User:     data["user"],
 				Message:  data["message"],
 			}
-			// Prepend (add to top)
 			m.notifications = append([]Notification{notif}, m.notifications...)
 		}
 		return m, waitForActivity(m.sub)
@@ -92,7 +89,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch m.state {
 
-		// VIEW MODE: Navigate the list
+		// VIEW MODE
 		case viewMode:
 			switch msg.String() {
 			case "q", "ctrl+c":
@@ -106,14 +103,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 				}
 			case "enter":
-				// Switch to Reply Mode
 				if len(m.notifications) > 0 {
 					m.state = replyMode
 					m.textInput.Focus()
 				}
 			}
 
-		// REPLY MODE: Type and Send
+		// REPLY MODE
 		case replyMode:
 			switch msg.String() {
 			case "esc":
@@ -121,18 +117,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Blur()
 				m.textInput.Reset()
 			case "enter":
-				// EXECUTE THE REPLY
 				target := m.notifications[m.cursor]
 				replyText := m.textInput.Value()
 
-				// Send via Postmaster based on platform
 				if target.Platform == "discord" && m.discordSender != nil {
 					m.discordSender.Send(target.ID, replyText)
 				} else if target.Platform == "slack" && m.slackSender != nil {
 					m.slackSender.Send(target.ID, replyText)
 				}
 
-				// Reset UI
 				m.state = viewMode
 				m.textInput.Reset()
 				return m, nil
@@ -140,7 +133,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update Text Input bubble if in reply mode
 	if m.state == replyMode {
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
@@ -154,14 +146,12 @@ func (m Model) View() string {
 
 	s.WriteString("SENTINEL COMMAND CENTER\n\n")
 
-	// RENDER LIST
 	for i, n := range m.notifications {
-		cursor := " " // no cursor
+		cursor := " "
 		if m.cursor == i {
-			cursor = ">" // selected
+			cursor = ">"
 		}
 
-		// Check if selected
 		style := noStyle
 		if m.cursor == i {
 			style = focusedStyle
@@ -173,7 +163,6 @@ func (m Model) View() string {
 
 	s.WriteString("\n")
 
-	// RENDER REPLY BOX
 	if m.state == replyMode {
 		s.WriteString(fmt.Sprintf("Replying to %s:\n", m.notifications[m.cursor].User))
 		s.WriteString(m.textInput.View())
