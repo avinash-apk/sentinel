@@ -4,63 +4,140 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/avinash-apk/sentinel/pkg/bus" // replace with your module
+	"github.com/avinash-apk/sentinel/pkg/bus"
+	"github.com/avinash-apk/sentinel/pkg/postmaster" // Import Postmaster
 )
 
-// styles for the ui
+// STYLES
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#7D56F4")).
-			Padding(0, 1)
-
-	eventStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#04B575"))
+	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	cursorStyle  = focusedStyle.Copy()
+	noStyle      = lipgloss.NewStyle()
 )
 
-type Model struct {
-	events []string       // list of logs to show
-	sub    chan bus.Event // channel to listen for new events
+// STATE MANAGEMENT
+type sessionState int
+
+const (
+	viewMode sessionState = iota
+	replyMode
+)
+
+// DATA STRUCTURE FOR LIST ITEMS
+type Notification struct {
+	Platform string
+	ID       string // The Channel ID or Issue Num
+	User     string
+	Message  string
 }
 
-// initial state of the ui
-func InitialModel(sub chan bus.Event) Model {
+type Model struct {
+	state        sessionState
+	notifications []Notification
+	cursor       int              // Which item is selected
+	textInput    textinput.Model  // The reply box
+	sub          chan bus.Event
+	sender       *postmaster.DiscordSender // Hardcoded for demo simplicity
+}
+
+func InitialModel(sub chan bus.Event, ds *postmaster.DiscordSender) Model {
+	ti := textinput.New()
+	ti.Placeholder = "Type your reply..."
+	ti.CharLimit = 156
+	ti.Width = 30
+
 	return Model{
-		events: []string{},
-		sub:    sub,
+		state:         viewMode,
+		notifications: []Notification{},
+		sub:           sub,
+		textInput:     ti,
+		sender:        ds,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	// start the listener loop immediately
-	return waitForActivity(m.sub)
+	return tea.Batch(textinput.Blink, waitForActivity(m.sub))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	
-	// handle key presses
-	case tea.KeyMsg:
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
-			return m, tea.Quit
-		}
-
-	// handle incoming events from the bus
+	// Handle Incoming Events
 	case bus.Event:
-		// format the log line
-		logLine := fmt.Sprintf("[%s] %v", msg.Topic, msg.Payload)
-		m.events = append(m.events, logLine)
-		
-		// keep only last 10 events to save space
-		if len(m.events) > 10 {
-			m.events = m.events[1:]
+		// Convert map payload to Notification struct
+		if data, ok := msg.Payload.(map[string]string); ok {
+			notif := Notification{
+				Platform: data["platform"],
+				ID:       data["id"],
+				User:     data["user"],
+				Message:  data["message"],
+			}
+			// Prepend (add to top)
+			m.notifications = append([]Notification{notif}, m.notifications...)
 		}
-		
-		// wait for the next event
 		return m, waitForActivity(m.sub)
+
+	// Handle Keypresses
+	case tea.KeyMsg:
+		switch m.state {
+		
+		// VIEW MODE: Navigate the list
+		case viewMode:
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.notifications)-1 {
+					m.cursor++
+				}
+			case "enter":
+				// Switch to Reply Mode
+				if len(m.notifications) > 0 {
+					m.state = replyMode
+					m.textInput.Focus()
+				}
+			}
+
+		// REPLY MODE: Type and Send
+		case replyMode:
+			switch msg.String() {
+			case "esc":
+				m.state = viewMode
+				m.textInput.Blur()
+				m.textInput.Reset()
+			case "enter":
+				// EXECUTE THE REPLY
+				target := m.notifications[m.cursor]
+				replyText := m.textInput.Value()
+				
+				// Send via Postmaster
+				// In a full app, you'd switch on target.Platform
+				if target.Platform == "discord" && m.sender != nil {
+					m.sender.Send(target.ID, replyText)
+				}
+				
+				// Reset UI
+				m.state = viewMode
+				m.textInput.Reset()
+				return m, nil
+			}
+		}
+	}
+
+	// Update Text Input bubble if in reply mode
+	if m.state == replyMode {
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -69,21 +146,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	s := strings.Builder{}
 
-	// render title
-	s.WriteString(titleStyle.Render("SENTINEL DASHBOARD") + "\n\n")
+	s.WriteString("SENTINEL COMMAND CENTER\n\n")
 
-	// render event log
-	for _, e := range m.events {
-		s.WriteString(eventStyle.Render(e) + "\n")
+	// RENDER LIST
+	for i, n := range m.notifications {
+		cursor := " " // no cursor
+		if m.cursor == i {
+			cursor = ">" // selected
+		}
+
+		// Check if selected
+		style := noStyle
+		if m.cursor == i {
+			style = focusedStyle
+		}
+
+		line := fmt.Sprintf("%s [%s] %s: %s", cursor, n.Platform, n.User, n.Message)
+		s.WriteString(style.Render(line) + "\n")
 	}
 
-	// render footer
-	s.WriteString("\npress 'q' to quit\n")
+	s.WriteString("\n")
+
+	// RENDER REPLY BOX
+	if m.state == replyMode {
+		s.WriteString(fmt.Sprintf("Replying to %s:\n", m.notifications[m.cursor].User))
+		s.WriteString(m.textInput.View())
+		s.WriteString("\n(Enter to send, Esc to cancel)")
+	} else {
+		s.WriteString("(Press Enter on a message to reply)")
+	}
 
 	return s.String()
 }
 
-// this function converts a channel receive into a bubble tea message
 func waitForActivity(sub chan bus.Event) tea.Cmd {
 	return func() tea.Msg {
 		return <-sub
